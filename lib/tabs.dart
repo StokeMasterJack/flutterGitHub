@@ -27,7 +27,7 @@ class TabsPage extends StatelessWidget {
           title: new Text('GitHub'),
         ),
         body: new TabBarView(
-          children: [new Repos(fRepos: repos), new Users(future: users)],
+          children: [new Repos(fRepos: repos), new Users(fUsers: users)],
         ),
       ),
     );

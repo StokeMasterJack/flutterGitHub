@@ -3,114 +3,103 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:github/github.dart';
-
-typedef void OnRepoTap(Repo repo);
+import 'package:github/ssutil_flutter.dart';
 
 class Repos extends StatelessWidget {
   final Future<List<Repo>> fRepos;
-  final OnRepoTap onRepoTap;
+  final OnSelected<Repo> onSelected;
 
-  Repos({@required this.fRepos, this.onRepoTap});
+  Repos({@required this.fRepos, this.onSelected});
 
   @override
   Widget build(BuildContext context) {
-    return new FutureBuilder<List<Repo>>(
+    return new FutBuilder<List<Repo>>(
         future: this.fRepos,
-        builder: (_, AsyncSnapshot<List<Repo>> snap) {
-//          logSnapshot(snap);
-          switch (snap.connectionState) {
-            case ConnectionState.waiting:
-              return renderWait();
-            case ConnectionState.done:
-              if (snap.hasData) {
-                List<Repo> repos = snap.data;
-                if (repos == null) {
-                  return Text("");
-                } else if (repos.length == 0) {
-                  return new Center(child: new Text("No records found"));
-                } else {
-                  return renderData(snap.data);
-                }
-              } else if (snap.hasError) {
-                return renderErr(snap.error);
-              } else {
-                return Text("");
-              }
-              break;
-            case ConnectionState.active:
-              return renderWait();
-            case ConnectionState.none:
-              return renderWait();
-            default:
-              throw StateError("Shouldnt be here 2");
+        dataBuilder: (BuildContext context, List<Repo> repos) {
+          if (repos == null) {
+            return Text("");
+          } else if (repos.length == 0) {
+            return new Center(child: new Text("No records found"));
+          } else {
+            return renderData(context, repos);
           }
         });
   }
 
-  Widget renderData(List<Repo> repos) {
+  Widget renderData(BuildContext context, List<Repo> repos) {
     return new ListView.builder(
         padding: new EdgeInsets.all(4.0),
         itemCount: repos.length,
         itemBuilder: (_, index) {
-          return _buildListItem(repos[index]);
+          return _buildListItem(context, repos[index]);
         });
   }
 
-  Widget renderErr(Object err) {
-    debugPrint("Problem compelting an http call $err");
-    return new Text("Error: $err");
-  }
-
-  Widget renderWait() {
-    return new Center(
-      child: new CircularProgressIndicator(),
-    );
-  }
-
-  Widget _buildListItem(Repo repo) {
+  Widget _buildListItem(BuildContext context, Repo repo) {
     const int maxLength = 100;
     String desc = (repo.description ?? "No description");
     if (desc.length > maxLength) desc = desc.substring(0, maxLength);
 
     return new ListTile(
-        leading: new CircleAvatar(child: new Text(repo.name[0].toUpperCase())),
-        title: new Text('${repo.name}'),
-        subtitle: new Text(desc),
-        trailing: new Text(repo.owner),
-        isThreeLine: true,
-        onTap: () {
-          if (onRepoTap != null) onRepoTap(repo);
-        });
+      leading: new CircleAvatar(child: new Text(repo.name[0].toUpperCase())),
+      title: new Text('${repo.name}'),
+      subtitle: new Text(desc),
+      trailing: new Text(repo.owner),
+      onTap: onSelected == null
+          ? null
+          : () {
+              onSelected(context, repo);
+            },
+      onLongPress: () {
+        print("Long Press");
+      },
+    );
   }
 
-  void logSnapshot(AsyncSnapshot<List<Repo>> snap) {
-    print("state: ${snap.connectionState}");
-    if (snap.hasData) {
-      print("hasData: ");
-      if (snap.data == null) {
-        print("data is null");
-      } else {
-        print("data.length is ${snap.data.length}");
-      }
-    } else if (snap.hasError) {
-      print("Err: ${snap.error}");
-    }
+  Widget buildPopupMenu(BuildContext context){
+    return new PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                initialValue: "a",
+                onSelected: (String selectedValue){
+                    snack(context, selectedValue);
+                } ,
+                child: new ListTile(
+                  title: const Text('An item with a simple menu'),
+                  subtitle: new Text("aaa")
+                ),
+                itemBuilder: (BuildContext context) => <PopupMenuItem<String>>[
+                  new PopupMenuItem<String>(
+                    value: "a",
+                    child: new Text("aaaa")
+                  ),
+                  new PopupMenuItem<String>(
+                    value: "b",
+                    child: new Text("bbbb")
+                  ),
+                  new PopupMenuItem<String>(
+                    value: "c",
+                    child: new Text("cccc")
+                  )
+                ]
+              );
   }
+
 }
 
 class ReposPage extends StatelessWidget {
   final Future<List<Repo>> fRepos;
-  final OnRepoTap onRepoTap;
+  final OnSelected<Repo> onSelected;
+  final String title;
 
-  ReposPage({@required this.fRepos, this.onRepoTap});
+  ReposPage({@required this.fRepos, this.onSelected, this.title});
 
   @override
   Widget build(BuildContext context) {
     return new Scaffold(
       appBar: new AppBar(
-        title: Text("Repos"),
+        title: Text(this.title ?? "Repos"),
       ),
-      body: new Repos(fRepos: fRepos, onRepoTap: onRepoTap),
+      body: new Repos(fRepos: fRepos, onSelected: onSelected),
     );
   }
 }
@@ -124,7 +113,7 @@ class ReposApp extends StatelessWidget {
         title: "Repos",
         home: new ReposPage(
             fRepos: g.fetchAllRepos(),
-            onRepoTap: (Repo repo) {
+            onSelected: (_, Repo repo) {
               print(repo);
             }));
   }

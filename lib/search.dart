@@ -1,48 +1,68 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:github/github.dart';
 import 'package:github/repos.dart';
 import 'package:github/ssutil.dart' as ss;
+import 'package:github/ssutil_flutter.dart';
+
 
 class SearchReposApp extends StatelessWidget {
+  final GitHub gitHub = new GitHub();
+
+
   @override
   Widget build(BuildContext context) {
-    return new MaterialApp(title: "GitHub", home: new SearchReposPage());
+    MaterialApp app =
+        new MaterialApp(title: "GitHub", home: new SearchReposPage(gitHub: gitHub));
+    return app;
   }
 }
 
 class SearchReposPage extends StatefulWidget {
-  final GitHub g = new GitHub();
+  final GitHub gitHub;
+  final Future<List<Repo>> fRepos;
+  final OnSelected<Repo> onSelected;
 
-  SearchReposPage() {
-    g.logging = false;
-    g.loginDave();
-  }
+  SearchReposPage({@required this.gitHub, this.fRepos, this.onSelected}) : assert(gitHub != null);
 
   @override
-  State createState() => new _SearchReposPageState();
+  State createState() => new _SearchReposPageState2();
 }
 
-class _SearchReposPageState extends State<SearchReposPage> {
+class _SearchReposPageState2 extends State<SearchReposPage> {
   Future<List<Repo>> fRepos;
-  bool searchMode = false;
   TextEditingController controller;
-  String query;
 
   @override
   void initState() {
     super.initState();
     controller = new TextEditingController();
-    fRepos = widget.g.fetchAllRepos();
+    if (widget.fRepos != null) {
+      this.fRepos = widget.fRepos;
+    } else {
+      this.fRepos = Future.value(null);
+    }
+
+    controller.addListener(() {
+      setState(() {
+        this.fRepos = fetchRepos();
+      });
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return new Scaffold(
-      drawer: mkDrawer(),
-      appBar: mkAppBar(),
-      body: new Repos(fRepos: fRepos),
+      appBar: new AppBar(
+        title: new Text("Search Repos"),
+        bottom: new AppBar(
+          automaticallyImplyLeading: false,
+          title: mkSearchTextField(),
+        ),
+      ),
+      body: new Repos(fRepos: fRepos, onSelected: widget.onSelected),
     );
   }
 
@@ -55,82 +75,43 @@ class _SearchReposPageState extends State<SearchReposPage> {
       return false;
   }
 
+  Future<List<Repo>> fetchRepos() {
+    if (isTextFieldEmpty()) return Future.value(null);
+    return widget.gitHub.fetchReposList(this.controller.text);
+  }
+
   TextField mkSearchTextField() {
     return new TextField(
         controller: this.controller,
-        onChanged: (String q) {
-          setState(() {});
-        },
         autofocus: true,
-        onSubmitted: (String q) {
-          setState(() {
-            this.query = ss.nullNormalize(q);
-            this.fRepos = widget.g.fetchReposList(q);
-            searchMode = false;
-            this.controller.clear();
-          });
-        },
         decoration: new InputDecoration(
-            fillColor: Theme.of(context).inputDecorationTheme.fillColor,
+            isDense: true,
+            contentPadding: const EdgeInsets.all(5.0).copyWith(right: 0.0),
+            suffixIcon: mkCancelIcon(),
+            filled: true,
+            fillColor: Colors.white,
             border: InputBorder.none,
             hintText: 'Search Repos'));
   }
 
   static const String baseTitle = "Repos";
 
-  String computeTitle() {
-    String qq = ss.nullNormalize(this.query);
-    if (qq == null) {
-      return baseTitle;
-    } else {
-      return "$baseTitle [$qq]";
-    }
-  }
+  Widget mkCancelIcon() {
+    IconButton x = new IconButton(
+        icon: new Icon(
+          Icons.cancel,
+          color: Colors.grey,
+          size: 18.0,
+        ),
+        onPressed: () {
+          setState(() {
+            controller.clear();
+          });
+        },
+        color: Colors.blue,
+        alignment: Alignment.centerRight);
 
-  Widget mkAppBar() {
-    if (!searchMode) {
-      return new AppBar(
-        title: new Text(computeTitle()),
-        actions: <Widget>[
-          new IconButton(
-            icon: new Icon(Icons.search),
-            onPressed: () {
-              setState(() {
-                controller.clear();
-                searchMode = true;
-              });
-            },
-          )
-        ],
-      );
-    } else {
-      return new AppBar(
-          leading: new IconButton(
-              icon: const BackButtonIcon(),
-              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-              onPressed: () {
-                setState(() {
-                  searchMode = false;
-                });
-              }),
-          title: mkSearchTextField(),
-          backgroundColor: Theme.of(context).secondaryHeaderColor,
-          actions: isTextFieldEmpty()
-              ? []
-              : [
-                  new IconButton(
-                    icon: new Icon(
-                      Icons.cancel,
-                      color: Colors.grey,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        controller.clear();
-                      });
-                    },
-                  )
-                ]);
-    }
+    return x;
   }
 
   @override
@@ -139,38 +120,4 @@ class _SearchReposPageState extends State<SearchReposPage> {
     controller.dispose();
     super.dispose();
   }
-}
-
-Drawer mkDrawer() {
-  return new Drawer(
-    // Add a ListView to the drawer. This ensures the user can scroll
-    // through the options in the Drawer if there isn't enough vertical
-    // space to fit everything.
-    child: new ListView(
-      // Important: Remove any padding from the ListView.
-      padding: EdgeInsets.zero,
-      children: <Widget>[
-        new DrawerHeader(
-          child: new Text('Drawer Header'),
-          decoration: new BoxDecoration(
-            color: Colors.blue,
-          ),
-        ),
-        new ListTile(
-          title: new Text('Item 1'),
-          onTap: () {
-            // Update the state of the app
-            // ...
-          },
-        ),
-        new ListTile(
-          title: new Text('Item 2'),
-          onTap: () {
-            // Update the state of the app
-            // ...
-          },
-        ),
-      ],
-    ),
-  );
 }

@@ -10,21 +10,21 @@ class NavApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: "NavApp",
-      home: new NavRoot(),
+      home: new NavPage(),
     );
   }
 }
 
-class NavRoot extends StatelessWidget {
+class NavPage extends StatelessWidget {
   final GitHub g = new GitHub();
 
   @override
   Widget build(BuildContext context) {
     UsersPage usersPage = new UsersPage(
-        future: g.fetchUsers(),
-        onUserTap: (User u) {
-          Widget nextPage = new ReposPage(fRepos: g.fetchReposForUser(u.login));
-          Navigator.push(context, new MaterialPageRoute(builder: (context) => nextPage));
+        fUsers: g.fetchUsers(),
+        onSelected: (BuildContext ctx,User u) {
+          Widget nextPage = new ReposPage(fRepos: g.fetchReposForUser(u.username));
+          Navigator.push(ctx, new MaterialPageRoute(builder: (ctx) => nextPage));
         });
 
     return usersPage;

@@ -3,8 +3,7 @@ import 'package:github/github.dart';
 void main1() async {
   GitHub g = new GitHub();
   g.logging = true;
-  g.login("StokeMasterJack", "6425kr");
-  User user = await g.fetchUser();
+  User user = await g.login(Credentials.dave());
   print(user);
 }
 

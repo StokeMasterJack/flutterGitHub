@@ -1,17 +1,24 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:github/ssutil.dart' as ss;
+import 'package:http/http.dart';
+//import 'package:http/http.dart';
 
 class User {
   final int id;
-  final String login;
+  final String username;
   final String type;
 
-  User({this.id, this.login, this.type});
+  String password;
+
+  User({this.id, this.username, this.type});
 
   @override
-  String toString() => 'User{login: $login}';
+  String toString() => username;
 
   //  factory User.fromJson(Map<String, dynamic> json) {
 //    return new User(
@@ -25,17 +32,32 @@ class User {
   static User fromJson(Map<String, dynamic> json) {
     return new User(
       id: json['id'],
-      login: json['login'],
+      username: json['login'],
       type: json['type'],
     );
+  }
+
+  static Map<String, dynamic> decode(String jsonText) {
+    return json.decode(jsonText);
+  }
+
+  static User parse(String jsonText) {
+    Map<String, dynamic> map = json.decode(jsonText);
+    return fromJson(map);
+  }
+
+  static List<User> parseUsers(String json) => ss.decodeJsonList<User>(json, fromJson);
+
+  Credentials credentials() {
+    return new Credentials(username, password);
   }
 }
 
 class Repo {
-  int id;
-  String name;
-  String description;
-  String owner;
+  final int id;
+  final String name;
+  final String description;
+  final String owner;
 
   Repo({this.id, this.name, this.description, this.owner});
 
@@ -44,8 +66,18 @@ class Repo {
     return 'Repo{name: $name}';
   }
 
+  factory Repo.fromJson1(Map<String, dynamic> json) {
+    return fromJson(json);
+  }
+
   static Repo fromJson(Map<String, dynamic> json) =>
       new Repo(id: json['id'], name: json['name'], description: json['description'], owner: json['owner']["login"]);
+
+  static List<Repo> parseRepos(String json) => ss.decodeJsonList<Repo>(json, fromJson);
+
+  static QueryResponse<Repo> parseQueryResponse(String json) {
+    return QueryResponse.parse<Repo>(json, Repo.fromJson);
+  }
 }
 
 class GitHub {
@@ -58,40 +90,105 @@ class GitHub {
                                0x72, 0x67, 0x72, 0xc3, 0xb8, 0x64]);
    */
 
-  bool _log;
+  Credentials _credentials = Credentials.dave();
+  User _user;
 
   set logging(bool value) {
     api.logging = value;
   }
 
   void loginDave() {
-    login("StokeMasterJack", "6425kr");
+    login(Credentials.dave());
   }
 
-  void login(String userName, String password) {
-    String authToken = ss.createBasicAuthToken(userName, password);
-    api.setAuth(authToken);
+  bool isLoggedIn() {
+    return _user != null;
   }
 
-  Future<User> fetchUser() async {
+  User get user {
+    return _user;
+  }
+
+  void logout() {
+    this._user = null;
+  }
+
+  void loginSuccess(User user) {
+    this._user = user;
+    this._credentials = user.credentials();
+  }
+
+  void loginFail() {
+    this._user = null;
+    this._credentials = null;
+  }
+
+  void setCachedLoginToDave() {
+    _credentials = Credentials.dave();
+  }
+
+  void clearCachedLogin() {
+    _credentials = null;
+  }
+
+  Credentials get cachedLogin {
+    return _credentials;
+  }
+
+  Future<User> login1(String username, String password) async {
+    return login(new Credentials(username, password));
+  }
+
+  Future<Response> httpGet(String url, {Map<String, String> headers}) async {
+    Map<String, String> h = headers ?? {};
+    if (_user != null) {
+      h[HttpHeaders.AUTHORIZATION] = _user.credentials().createBasicAuthToken();
+    }
+    return api.get(url, headers: h);
+  }
+
+  Future<User> login(Credentials login) async {
+    String auth = login.createBasicAuthToken();
     String url = "$baseUrl/user";
-    return api.getObject(url, User.fromJson);
+    try {
+      Response response = await api.get(url, headers: {HttpHeaders.AUTHORIZATION: auth});
+      return await compute(User.parse, response.body);
+    } on ss.HttpException catch (e) {
+      if (e.statusCode == 401) {
+        return null;
+      } else {
+        throw e;
+      }
+    }
   }
 
-  //  https://api.github.com/users
-  Future<List<User>> fetchUsers() async => api.getList('$baseUrl/users', User.fromJson);
+//  https://api.github.com/users
+  Future<List<User>> fetchUsers() async {
+    Response response = await httpGet("$baseUrl/users");
+    return compute(User.parseUsers, response.body);
+  }
 
-  //  https://api.github.com/search/repositories?q=configurator
+//  https://api.github.com/search/repositories?q=configurator
   Future<QueryResponse<Repo>> fetchRepos(String query) async {
     if (query == null) throw ArgumentError.notNull("query");
-    return api.getObject("$baseUrl/search/repositories?q=$query", (Map<String, dynamic> json) {
-      return QueryResponse.fromJson(json, Repo.fromJson);
-    });
+    Response response = await httpGet("$baseUrl/search/repositories?q=$query");
+    return Repo.parseQueryResponse(response.body);
   }
 
-  //  https://api.github.com/repositories
+  Future<List<Repo>> fetchMyRepos() async {
+    Response response = await httpGet("$baseUrl/user/repos");
+    return compute(Repo.parseRepos, response.body);
+  }
+
+//  https://api.github.com/repositories
   Future<List<Repo>> fetchAllRepos() async {
-    return api.getList("$baseUrl/repositories", Repo.fromJson);
+    Response response = await httpGet("$baseUrl/repositories");
+    return compute(Repo.parseRepos, response.body);
+  }
+
+  List<Repo> parseReposFails(String responseBody) {
+    final parsed = json.decode(responseBody);
+    return parsed.map((json) => Repo.fromJson(json)).toList(); //cause a cast error
   }
 
   Future<List<Repo>> fetchReposList(String query) async {
@@ -104,9 +201,11 @@ class GitHub {
     }
   }
 
-  //  https://api.github.com/users/StokeMasterJack/repos
-  Future<List<Repo>> fetchReposForUser(String username) async =>
-      api.getList("$baseUrl/users/$username/repos", Repo.fromJson);
+//  https://api.github.com/users/StokeMasterJack/repos
+  Future<List<Repo>> fetchReposForUser(String username) async {
+    final response = await httpGet("$baseUrl/users/$username/repos");
+    return compute(Repo.parseRepos, response.body);
+  }
 
   QueryResponse<T> _decodeQueryResponseJson<T>(
       String jsonQueryResponseUnparsed, ss.FromJsonFactory<T> fromJsonFactory) {
@@ -127,5 +226,35 @@ class QueryResponse<T> {
         totalCount: json['totalCount'],
         incompleteResults: json['incompleteResults'],
         items: ss.convertJsonList(json['items'], fromJsonFactory));
+  }
+
+  static QueryResponse<T> parse<T>(String jsonText, ss.FromJsonFactory<T> fromJsonFactory) {
+    Map<String, dynamic> map = json.decode(jsonText);
+    return fromJson<T>(map, fromJsonFactory);
+  }
+}
+
+class Credentials {
+  final String username;
+  final String password;
+
+  const Credentials(this.username, this.password)
+      : assert(username != null),
+        assert(password != null);
+
+  @override
+  String toString() {
+    return 'Login{username: $username, password: $password}';
+  }
+
+  String createBasicAuthToken() {
+    String authRaw = "$username:$password";
+    Uint8List u = utf8.encode(authRaw);
+    String b = base64.encode(u);
+    return "Basic $b";
+  }
+
+  static Credentials dave() {
+    return const Credentials("StokeMasterJack", "6425kr"); //todo
   }
 }

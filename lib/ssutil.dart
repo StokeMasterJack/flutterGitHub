@@ -1,21 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 typedef T FromJsonFactory<T>(Map<String, dynamic> json);
 
 class Api {
-  String auth;
   bool logging = false;
 
   Future<http.Response> get(String url, {Map<String, String> headers}) async {
     Map<String, String> h = headers ?? {};
-    if (auth != null) {
-      h[HttpHeaders.AUTHORIZATION] = auth;
-    }
 
     final response = await http.get(url, headers: h);
 
@@ -31,21 +27,6 @@ class Api {
 
     return response;
   }
-
-  Future<List<T>> getList<T>(String url, FromJsonFactory<T> fromJsonFactory) async {
-    final response = await get(url);
-    return decodeJsonList(response.body, fromJsonFactory);
-  }
-
-  Future<T> getObject<T>(String url, FromJsonFactory<T> fromJsonFactory) async {
-    final response = await get(url);
-    final Map<String, dynamic> jsonObject = json.decode(response.body);
-    return fromJsonFactory(jsonObject);
-  }
-
-  void setAuth(String authToken) {
-    this.auth = authToken;
-  }
 }
 
 class HttpException implements Exception {
@@ -57,28 +38,31 @@ class HttpException implements Exception {
     return responseToString(response);
   }
 
+  int get statusCode => response.statusCode;
+
   log() {
     print(toString());
   }
 }
 
 List<T> convertJsonList<T>(List<dynamic> jsonListParsed, FromJsonFactory<T> fromJsonFactory) {
-  List tmp = [];
+  List<T> tmp = [];
   for (var jsonObject in jsonListParsed) {
     T o = fromJsonFactory(jsonObject);
     tmp.add(o);
   }
-  return new List.from(tmp);
+  return tmp;
 }
 
-List<T> decodeJsonList<T>(String jsonListUnparsed, FromJsonFactory<T> fromJsonFactory) {
-  final List<dynamic> jsonListParsed = json.decode(jsonListUnparsed);
+List<T> decodeJsonList<T>(String jsonListText, FromJsonFactory<T> fromJsonFactory) {
+  final List<dynamic> jsonListParsed = json.decode(jsonListText);
   return convertJsonList(jsonListParsed, fromJsonFactory);
 }
 
 String responseToString(http.Response response) {
   return """url: ${response.request.url}
         responseStatus: ${response.statusCode}
+        responseHeaders: ${response.headers}
         responsebody: ${response.body}
         """;
 }
@@ -88,11 +72,23 @@ logHttpResponseError(response) {
   print(responseToString(response));
 }
 
-String createBasicAuthToken(String userName, String password) {
-  String authRaw = "$userName:$password";
-  Uint8List u = utf8.encode(authRaw);
-  String b = base64.encode(u);
-  return "Basic $b";
+logError(Object err, String title) {
+  final String effectiveTitle = title ?? "An error occurred";
+  debugPrint(effectiveTitle);
+  if (err == null) {
+    debugPrint("Error object was null");
+  } else {
+    debugPrint(err.toString());
+    debugPrint(err.runtimeType == null ? err.runtimeType.toString() : "No runtimeType");
+    if (err is Error) {
+      final StackTrace trace = err.stackTrace;
+      if (trace != null) {
+        debugPrint(err.stackTrace.toString());
+      } else {
+        debugPrint("No stackTrace");
+      }
+    }
+  }
 }
 
 bool isMissing(String s) {
@@ -105,4 +101,10 @@ String nullNormalize(String s) {
   if (s == null) return null;
   if (s.trim().isEmpty) return null;
   return s.trim();
+}
+
+bool isValidEmail(String email) {
+  RegExp emailRegExp = new RegExp(
+      r"^((([a-z]|\d|[!#\$%&'\*\+\-\/=\?\^_`{\|}~]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(\.([a-z]|\d|[!#\$%&'\*\+\-\/=\?\^_`{\|}~]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+)*)|((\x22)((((\x20|\x09)*(\x0d\x0a))?(\x20|\x09)+)?(([\x01-\x08\x0b\x0c\x0e-\x1f\x7f]|\x21|[\x23-\x5b]|[\x5d-\x7e]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(\\([\x01-\x09\x0b\x0c\x0d-\x7f]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]))))*(((\x20|\x09)*(\x0d\x0a))?(\x20|\x09)+)?(\x22)))@((([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])))\.)+(([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])))$");
+  return emailRegExp.hasMatch(email.toLowerCase());
 }
